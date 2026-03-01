@@ -2,6 +2,9 @@
 -- PROJECT SCHEMA — SUPABASE / POSTGRESQL (HARDENED)
 -- ============================================================
 
+create schema if not exists extensions;
+set search_path = public, extensions;
+
 create extension if not exists "uuid-ossp";
 create extension if not exists pgcrypto; -- for digest()
 

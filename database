@@ -87,17 +87,65 @@ comment on table public.contracts is
 create or replace view public.user_scores as
 select
   u.id,
-  au.email,
   u.company_name,
   u.role,
   ar.score,
   ar.created_at as assessment_date
 from public.users u
-join auth.users au on au.id = u.id
 left join public.assessment_responses ar on ar.user_id = u.id;
 
 comment on view public.user_scores is
-  'Convenience view joining profile with auth email and assessment score.';
+  'Convenience view joining profile with assessment score (no auth.users).';
+
+-- ------------------------------------------------------------
+-- FUNCTION: user_scores_with_email
+-- Admins can see all users; non-admins can only see themselves.
+-- ------------------------------------------------------------
+create or replace function public.user_scores_with_email()
+returns table (
+  id uuid,
+  email text,
+  company_name text,
+  role public.user_role,
+  score int,
+  assessment_date timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, auth, pg_temp
+as $$
+begin
+  if public.is_admin() then
+    return query
+    select
+      u.id,
+      au.email,
+      u.company_name,
+      u.role,
+      ar.score,
+      ar.created_at as assessment_date
+    from public.users u
+    join auth.users au on au.id = u.id
+    left join public.assessment_responses ar on ar.user_id = u.id;
+  end if;
+
+  return query
+  select
+    u.id,
+    au.email,
+    u.company_name,
+    u.role,
+    ar.score,
+    ar.created_at as assessment_date
+  from public.users u
+  join auth.users au on au.id = u.id
+  left join public.assessment_responses ar on ar.user_id = u.id
+  where u.id = auth.uid();
+end;
+$$;
+
+revoke all on function public.user_scores_with_email() from public;
+grant execute on function public.user_scores_with_email() to authenticated;
 
 -- ------------------------------------------------------------
 -- TRIGGER: create profile row on signup
