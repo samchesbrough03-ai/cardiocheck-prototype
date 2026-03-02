@@ -610,7 +610,7 @@ function Landing({ onNavigate }: { onNavigate: (target: NavTarget) => void }) {
               fontWeight: 300,
             }}
           >
-            Takes 10 minutes. No account needed. You'll receive a personalised Legal Health Score
+            Takes 10 minutes. No account needed. You&apos;ll receive a personalised Legal Health Score
             with a breakdown of your top risk areas.
           </p>
           <button
@@ -692,4 +692,3 @@ export default function VitalSignsLanding() {
     </>
   );
 }
-

@@ -47,18 +47,25 @@ export async function POST(request: NextRequest) {
 
   const scores = calculateScores(responses);
   const overallScore = Math.round(scores.overall);
-  const token = createPendingAssessmentToken();
+
+  // If the browser already has a pending token, reuse it so repeated submissions
+  // overwrite the same DB row (reduces orphaned pending rows).
+  const existingToken = request.cookies.get(PENDING_ASSESSMENT_COOKIE)?.value ?? null;
+  const token = existingToken && existingToken.length >= 16 ? existingToken : createPendingAssessmentToken();
   const tokenHash = sha256ByteaLiteral(token);
 
   try {
     const admin = createSupabaseAdminClient();
 
-    const { error } = await admin.from("pending_assessments").insert({
-      session_token_hash: tokenHash,
-      responses,
-      score: overallScore,
-      breakdown: scores.vitalScores,
-    });
+    const { error } = await admin.from("pending_assessments").upsert(
+      {
+        session_token_hash: tokenHash,
+        responses,
+        score: overallScore,
+        breakdown: scores.vitalScores,
+      },
+      { onConflict: "session_token_hash" }
+    );
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -86,4 +93,3 @@ export async function POST(request: NextRequest) {
 
   return response;
 }
-

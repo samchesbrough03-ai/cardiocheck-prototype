@@ -25,6 +25,7 @@ export default function DocumentsClient({ initialContracts }: DocumentsClientPro
   const [uploading, setUploading] = useState(false);
 
   const hasContracts = useMemo(() => contracts.length > 0, [contracts.length]);
+  const maxPdfBytes = 10 * 1024 * 1024;
 
   async function refresh() {
     const { data: userResult } = await supabase.auth.getUser();
@@ -48,8 +49,13 @@ export default function DocumentsClient({ initialContracts }: DocumentsClientPro
     setUploading(true);
 
     try {
-      if (file.type !== "application/pdf") {
+      const isPdfByMime = file.type === "application/pdf";
+      const isPdfByName = file.name.toLowerCase().endsWith(".pdf");
+      if (!isPdfByMime && !isPdfByName) {
         throw new Error("Please upload a PDF file.");
+      }
+      if (file.size > maxPdfBytes) {
+        throw new Error("File is too large. Please upload a PDF under 10MB.");
       }
 
       const {
@@ -61,7 +67,7 @@ export default function DocumentsClient({ initialContracts }: DocumentsClientPro
       if (!user) throw new Error("Not signed in.");
 
       const contractId = crypto.randomUUID();
-      const path = `${user.id}/${contractId}/${file.name}`;
+      const path = `${user.id}/${contractId}/document.pdf`;
 
       const { error: uploadError } = await supabase.storage
         .from("contracts")
@@ -186,4 +192,3 @@ export default function DocumentsClient({ initialContracts }: DocumentsClientPro
     </div>
   );
 }
-
