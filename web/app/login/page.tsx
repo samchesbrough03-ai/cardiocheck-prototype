@@ -1,0 +1,10 @@
+import LoginForm from "@/components/auth/LoginForm";
+
+export const metadata = {
+  title: "Sign in | VitalSigns",
+};
+
+export default function LoginPage() {
+  return <LoginForm />;
+}
+
