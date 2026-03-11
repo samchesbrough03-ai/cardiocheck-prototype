@@ -11,8 +11,7 @@ import { calculateScores } from "@/lib/vitalsigns/scoring";
 
 type PendingAssessmentBody = {
   responses?: Record<string, unknown>;
-  email?: string | null;
-  company_name?: string | null;
+  [key: string]: unknown;
 };
 
 function sanitizeResponses(input: unknown) {

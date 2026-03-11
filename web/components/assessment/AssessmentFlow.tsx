@@ -7,21 +7,17 @@ import { QUESTIONS, VITALS } from "@/lib/vitalsigns/constants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
-type AssessmentMode = "intro" | "questions" | "capture" | "submitting";
+type AssessmentMode = "intro" | "questions" | "submitting";
 
 export default function AssessmentFlow() {
   const router = useRouter();
   const totalQuestions = QUESTIONS.length;
 
   const [mode, setMode] = useState<AssessmentMode>("intro");
-  const [step, setStep] = useState(0); // 0-based question index
+  const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
-  const [email, setEmail] = useState("");
-  const [companyName, setCompanyName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const currentQuestion = mode === "questions" ? QUESTIONS[step] : null;
@@ -41,12 +37,6 @@ export default function AssessmentFlow() {
 
   function goBack() {
     setError(null);
-    if (mode === "capture") {
-      setMode("questions");
-      setStep(totalQuestions - 1);
-      return;
-    }
-
     if (mode === "questions") {
       if (step === 0) {
         setMode("intro");
@@ -56,20 +46,22 @@ export default function AssessmentFlow() {
     }
   }
 
-  function handleAnswer(optionIndex: number) {
+  async function handleAnswer(optionIndex: number) {
     if (!currentQuestion) return;
 
-    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: optionIndex }));
+    const nextAnswers = { ...answers, [currentQuestion.id]: optionIndex };
+    setAnswers(nextAnswers);
     setError(null);
 
     if (step < totalQuestions - 1) {
       setStep((prev) => prev + 1);
-    } else {
-      setMode("capture");
+      return;
     }
+
+    await submit(nextAnswers);
   }
 
-  async function submit() {
+  async function submit(responses: Record<string, number> = answers) {
     setError(null);
     setMode("submitting");
 
@@ -78,9 +70,7 @@ export default function AssessmentFlow() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          responses: answers,
-          email: email.trim() || null,
-          company_name: companyName.trim() || null,
+          responses,
         }),
       });
 
@@ -91,10 +81,11 @@ export default function AssessmentFlow() {
         throw new Error(payload?.error ?? "Failed to submit assessment.");
       }
 
-      router.push("/results");
+      router.push("/register?next=/dashboard&from=assessment");
       router.refresh();
     } catch (err) {
-      setMode("capture");
+      setMode("questions");
+      setStep(totalQuestions - 1);
       setError(err instanceof Error ? err.message : "Something went wrong.");
     }
   }
@@ -120,7 +111,7 @@ export default function AssessmentFlow() {
                 Legal Health Score
               </CardTitle>
               <CardDescription>
-                Answer 15 questions. Get your score instantly — no account required.
+                Answer 15 questions, then create an account to unlock your score.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -139,8 +130,8 @@ export default function AssessmentFlow() {
                 </Card>
                 <Card className="border-dashed">
                   <CardHeader className="pb-2">
-                    <CardTitle className="font-[var(--font-display)] text-2xl">Free</CardTitle>
-                    <CardDescription>no account</CardDescription>
+                    <CardTitle className="font-[var(--font-display)] text-2xl">Secure</CardTitle>
+                    <CardDescription>account required</CardDescription>
                   </CardHeader>
                 </Card>
               </div>
@@ -191,6 +182,11 @@ export default function AssessmentFlow() {
                   </Button>
                 ))}
               </div>
+              {error && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {error}
+                </div>
+              )}
               <div className="flex items-center justify-between pt-2">
                 <Button variant="ghost" onClick={goBack}>
                   Back
@@ -203,58 +199,11 @@ export default function AssessmentFlow() {
           </Card>
         )}
 
-        {mode === "capture" && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-[var(--font-display)] text-2xl font-black">
-                Almost done
-              </CardTitle>
-              <CardDescription>
-                Enter your email to view results. Create an account later to save your score.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="company">Company name (optional)</Label>
-                <Input
-                  id="company"
-                  placeholder="Acme Ltd"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                />
-              </div>
-
-              {error && (
-                <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {error}
-                </div>
-              )}
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <Button variant="ghost" onClick={goBack}>
-                  Back
-                </Button>
-                <Button onClick={submit}>View results</Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         {mode === "submitting" && (
           <Card>
             <CardHeader>
               <CardTitle className="font-[var(--font-display)] text-2xl font-black">
-                Calculating…
+                Calculating...
               </CardTitle>
               <CardDescription>
                 Saving your score securely for this browser session.
@@ -272,4 +221,3 @@ export default function AssessmentFlow() {
     </div>
   );
 }
-

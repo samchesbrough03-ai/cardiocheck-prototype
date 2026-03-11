@@ -3,11 +3,29 @@ import { createServerSupabaseClient } from "@/lib/supabase/server-client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import ClaimAssessmentButton from "@/components/dashboard/ClaimAssessmentButton";
+import { VITALS, type VitalId } from "@/lib/vitalsigns/constants";
+import { scoreLabel } from "@/lib/vitalsigns/scoring";
 
 export const metadata = {
   title: "Dashboard | VitalSigns",
 };
+
+type Breakdown = Partial<Record<VitalId, number>>;
+
+function sanitizeBreakdown(value: unknown): Breakdown {
+  if (!value || typeof value !== "object") return {};
+  const record = value as Record<string, unknown>;
+  const result: Breakdown = {};
+
+  for (const vital of VITALS) {
+    const maybeScore = record[vital.id];
+    if (typeof maybeScore === "number" && Number.isFinite(maybeScore)) {
+      result[vital.id] = Math.max(0, Math.min(100, Math.round(maybeScore)));
+    }
+  }
+
+  return result;
+}
 
 export default async function DashboardPage() {
   const supabase = await createServerSupabaseClient();
@@ -18,10 +36,14 @@ export default async function DashboardPage() {
   const { data: assessment } = user
     ? await supabase
         .from("assessment_responses")
-        .select("score, created_at")
+        .select("score, breakdown, created_at")
         .eq("user_id", user.id)
         .maybeSingle()
     : { data: null };
+
+  const score = typeof assessment?.score === "number" ? assessment.score : null;
+  const breakdown = sanitizeBreakdown(assessment?.breakdown);
+  const createdAt = typeof assessment?.created_at === "string" ? assessment.created_at : null;
 
   return (
     <div className="space-y-6">
@@ -41,38 +63,69 @@ export default async function DashboardPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="font-[var(--font-display)] text-2xl font-black">
-            Your score
+          <CardTitle className="font-[var(--font-display)] text-3xl font-black">
+            Your Legal Health Score
           </CardTitle>
           <CardDescription>
-            Saved scores come from completed assessments tied to your account.
+            Your assessment score and breakdown are available here once you sign in.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <CardContent className="space-y-6">
           {assessment ? (
-            <div className="flex items-end gap-4">
-              <div className="font-[var(--font-display)] text-6xl font-black tracking-tight">
-                {assessment.score}
+            <>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <div className="font-[var(--font-display)] text-6xl font-black tracking-tight">
+                    {score ?? "—"}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {score == null ? "Score unavailable" : scoreLabel(score)}
+                  </div>
+                </div>
+                {createdAt && (
+                  <Badge variant="secondary" className="w-fit">
+                    {new Date(createdAt).toLocaleString()}
+                  </Badge>
+                )}
               </div>
-              <Badge variant="secondary" className="w-fit">
-                {new Date(assessment.created_at).toLocaleDateString()}
-              </Badge>
-            </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {VITALS.map((vital) => {
+                  const vitalScore = breakdown[vital.id] ?? null;
+                  return (
+                    <Card key={vital.id} className="border-dashed">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ background: vital.accentColor }}
+                            aria-hidden="true"
+                          />
+                          {vital.name}
+                        </CardTitle>
+                        <CardDescription>{vital.description}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <div className="text-2xl font-semibold">
+                          {vitalScore ?? "—"}
+                          {typeof vitalScore === "number" ? "/100" : ""}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </>
           ) : (
-            <div className="space-y-2">
-              <div className="text-sm text-muted-foreground">
-                No saved score yet. If you completed the assessment on this browser, you can save it now.
-              </div>
-              <ClaimAssessmentButton />
+            <div className="text-sm text-muted-foreground">
+              No saved score yet. Complete the assessment and create or sign in to an account to
+              view results here.
             </div>
           )}
 
           <div className="flex gap-3">
-            <Button variant="outline" asChild>
-              <Link href="/results">View browser results</Link>
-            </Button>
             <Button asChild>
-              <Link href="/assessment">Take assessment</Link>
+              <Link href="/assessment">Retake assessment</Link>
             </Button>
           </div>
         </CardContent>

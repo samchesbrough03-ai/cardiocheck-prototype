@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser-client";
 import { Button } from "@/components/ui/button";
@@ -9,9 +9,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+function sanitizeNextPath(nextRaw: string | null) {
+  if (!nextRaw) return "/dashboard";
+  if (!nextRaw.startsWith("/") || nextRaw.startsWith("//")) return "/dashboard";
+  if (nextRaw.includes("\\")) return "/dashboard";
+  return nextRaw;
+}
+
 export default function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = getSupabaseBrowserClient();
+
+  const nextPath = sanitizeNextPath(searchParams.get("next"));
+  const fromAssessment = searchParams.get("from") === "assessment";
+  const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
 
   const [companyName, setCompanyName] = useState("");
   const [email, setEmail] = useState("");
@@ -41,7 +53,7 @@ export default function RegisterForm() {
           data: {
             company_name: companyName.trim(),
           },
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}`,
         },
       });
 
@@ -51,13 +63,13 @@ export default function RegisterForm() {
 
       if (data.session) {
         await claimPendingAssessment();
-        router.push("/dashboard");
+        router.push(nextPath);
         router.refresh();
         return;
       }
 
       setInfo(
-        "Check your email to verify your account. After verifying, sign in and we’ll save your assessment score automatically."
+        "Check your email to verify your account. After verifying, sign in and we will save your assessment score automatically."
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create account.");
@@ -83,6 +95,12 @@ export default function RegisterForm() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {fromAssessment && (
+              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                Create your account to unlock your assessment score.
+              </div>
+            )}
+
             <div className="grid gap-2">
               <Label htmlFor="company">Company name</Label>
               <Input
@@ -125,12 +143,12 @@ export default function RegisterForm() {
             )}
 
             <Button className="w-full" onClick={signUp} disabled={loading}>
-              {loading ? "Creating…" : "Create account"}
+              {loading ? "Creating..." : "Create account"}
             </Button>
 
             <div className="text-center text-sm text-muted-foreground">
               Already have an account?{" "}
-              <Link href="/login" className="text-foreground underline underline-offset-4">
+              <Link href={loginHref} className="text-foreground underline underline-offset-4">
                 Sign in
               </Link>
             </div>

@@ -1,22 +1,43 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+function sanitizeNextPath(nextRaw: string | null) {
+  if (!nextRaw) return "/dashboard";
+  if (!nextRaw.startsWith("/") || nextRaw.startsWith("//")) return "/dashboard";
+  if (nextRaw.includes("\\")) return "/dashboard";
+  return nextRaw;
+}
+
+const PRODUCTION_APP_ORIGIN = "https://www.fivevitals.co.uk";
+
 export default function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = getSupabaseBrowserClient();
+  const freshHandledRef = useRef(false);
+
+  const nextPath = sanitizeNextPath(searchParams.get("next"));
+  const freshLoginRequired = searchParams.get("fresh") === "1";
+  const registerHref = `/register?next=${encodeURIComponent(nextPath)}`;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!freshLoginRequired || freshHandledRef.current) return;
+    freshHandledRef.current = true;
+    void supabase.auth.signOut().catch(() => null);
+  }, [freshLoginRequired, supabase]);
 
   async function claimPendingAssessment() {
     await fetch("/api/assessment/claim", { method: "POST" }).catch(() => null);
@@ -36,7 +57,7 @@ export default function LoginForm() {
       }
 
       await claimPendingAssessment();
-      router.push("/dashboard");
+      router.push(nextPath);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in.");
@@ -49,10 +70,14 @@ export default function LoginForm() {
     setError(null);
     setLoading(true);
     try {
+      const isLocalhost =
+        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+      const callbackOrigin = isLocalhost ? window.location.origin : PRODUCTION_APP_ORIGIN;
+
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+          redirectTo: `${callbackOrigin}/auth/callback?next=${encodeURIComponent("/dashboard")}`,
         },
       });
       if (oauthError) throw new Error(oauthError.message);
@@ -79,6 +104,12 @@ export default function LoginForm() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {freshLoginRequired && (
+              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                Please sign in to continue to your dashboard.
+              </div>
+            )}
+
             <div className="grid gap-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -107,7 +138,7 @@ export default function LoginForm() {
             )}
 
             <Button className="w-full" onClick={signIn} disabled={loading}>
-              {loading ? "Signing in…" : "Sign in"}
+              {loading ? "Signing in..." : "Sign in"}
             </Button>
             <Button
               className="w-full"
@@ -120,7 +151,7 @@ export default function LoginForm() {
 
             <div className="text-center text-sm text-muted-foreground">
               No account?{" "}
-              <Link href="/register" className="text-foreground underline underline-offset-4">
+              <Link href={registerHref} className="text-foreground underline underline-offset-4">
                 Create one
               </Link>
             </div>
@@ -130,4 +161,3 @@ export default function LoginForm() {
     </div>
   );
 }
-

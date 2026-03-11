@@ -1,107 +1,71 @@
 # Phase 1 (VitalSigns) — Implementation Notes / Change Log
 
-This repo’s `web/` app is now aligned to “VitalSigns Phase 1” using the **existing Supabase schema** (`public.users`, `pending_assessments`, `assessment_responses`, `contracts`).
+This repo's `web/` app is aligned to "VitalSigns Phase 1" using the existing Supabase schema (`public.users`, `pending_assessments`, `assessment_responses`, `contracts`).
 
-## What’s implemented
+## What's implemented
 
-### Marketing + assessment (no account required)
-- `web/app/page.tsx` + `web/components/marketing/VitalSignsLanding.tsx`: pixel-identical landing page ported from `vitalsigns-phase1.jsx` (inline styles + animations) with Next navigation.
-- `web/app/assessment/page.tsx` + `web/components/assessment/AssessmentFlow.tsx`: 15-question assessment UI (ported question set from `vitalsigns-phase1.jsx` into constants + scoring).
-- `web/app/results/page.tsx`: same-browser-only results page backed by `pending_assessments` (cookie + server lookup).
+### Marketing + assessment (account required before score)
+- `web/app/page.tsx` + `web/components/marketing/VitalSignsLanding.tsx`: marketing site with updated copy reflecting auth-required score access.
+- `web/app/assessment/page.tsx` + `web/components/assessment/AssessmentFlow.tsx`: 15-question assessment that stores pending results server-side, then redirects users to register/sign in before score visibility.
+- `web/app/results/page.tsx`: legacy route that redirects to `/dashboard` when authenticated, or `/login?next=/dashboard&fresh=1` when logged out.
 
 ### Scoring + question source of truth
 - `web/lib/vitalsigns/constants.ts`: `VITALS` + `QUESTIONS`.
 - `web/lib/vitalsigns/scoring.ts`: `calculateScores()` and `scoreLabel()`.
 
-### Pending assessment (same-browser-only)
-- `web/lib/vitalsigns/pending-session.ts`: token creation + SHA-256 helper, cookie name/constants.
+### Pending assessment flow (same browser token)
+- `web/lib/vitalsigns/pending-session.ts`: token creation + SHA-256 helper, cookie constants.
 - `web/lib/supabase/admin-client.ts`: server-only Supabase client using `SUPABASE_SERVICE_ROLE_KEY`.
 - `web/app/api/assessment/pending/route.ts`:
   - Validates responses server-side.
   - Calculates score server-side.
   - Inserts into `pending_assessments`.
-  - Sets an HttpOnly cookie (`vs_pending_assessment`) for same-browser lookup.
+  - Sets HttpOnly cookie (`vs_pending_assessment`) for same-browser pending lookup.
+- `web/lib/vitalsigns/claim-pending.ts`:
+  - Shared server helper to claim pending assessment into `assessment_responses`.
+  - Clears pending cookie and deletes pending row (best effort).
 - `web/app/api/assessment/claim/route.ts`:
-  - For authenticated users: copies pending → `assessment_responses` (upsert on `user_id`) and clears the cookie.
+  - Authenticated claim endpoint delegating to shared helper.
+- `web/app/auth/callback/route.ts`:
+  - Runs auto-claim after successful code exchange.
 
 ### Auth pages
-- `web/app/login/page.tsx` + `web/components/auth/LoginForm.tsx`: email/password login + optional Google OAuth.
-- `web/app/register/page.tsx` + `web/components/auth/RegisterForm.tsx`: signup (requires company name) and sets `company_name` in user metadata (used by the DB trigger to create `public.users`).
+- `web/app/login/page.tsx` + `web/components/auth/LoginForm.tsx`:
+  - Email/password login + optional Google OAuth.
+  - Supports `next` redirect and optional `fresh=1` sign-out-first behavior.
+- `web/app/register/page.tsx` + `web/components/auth/RegisterForm.tsx`:
+  - Signup (requires company name).
+  - Supports `next` redirect and assessment-origin context.
 
 ### Dashboard + documents + admin
-- `web/middleware.ts`: protects `/dashboard/*` and `/admin/*` (admin check uses `public.users.role`).
+- `web/proxy.ts`: protects `/dashboard/*` and `/admin/*` (admin check uses `public.users.role`).
 - `web/app/dashboard/layout.tsx`: dashboard shell + sidebar.
-- `web/app/dashboard/page.tsx`: overview + saved score display (from `assessment_responses`) and a “claim” button.
-- `web/components/dashboard/ClaimAssessmentButton.tsx`: lets users save (claim) their browser assessment after login.
+- `web/app/dashboard/page.tsx`: dashboard-only score experience with overall score and full vital breakdown from `assessment_responses`.
 - `web/app/dashboard/documents/page.tsx` + `web/components/dashboard/DocumentsClient.tsx`:
-  - Uploads PDFs to Supabase Storage bucket `contracts` (private).
-  - Inserts metadata into `public.contracts`.
-  - Lists uploaded files and generates signed download URLs.
+  - Upload PDFs to Supabase Storage bucket `contracts` (private).
+  - Insert metadata into `public.contracts`.
+  - List uploaded files and generate signed download URLs.
 - `web/app/admin/page.tsx`, `web/app/admin/documents/page.tsx`, `web/components/admin/AdminDocumentsClient.tsx`:
-  - Admin list of all uploaded contracts (per RLS).
+  - Admin list of uploaded contracts (per RLS).
 
 ## Supporting / refactor changes
-- `web/app/layout.tsx`: switches to Playfair Display + DM Sans (VitalSigns-like typography).
-- `web/app/globals.css`: aligns `--font-sans` / `--font-display` variables with the new font variables and shadcn theme.
-- `web/proxy.ts`: updated gating logic to match `/dashboard` + `/admin` (kept for compatibility; middleware is the primary mechanism).
-- `web/lib/supabase/server-client.ts`: typed/cleaned cookie bridging to avoid strict TS `implicit any` issues.
+- `web/app/layout.tsx`: Playfair Display + DM Sans typography.
+- `web/app/globals.css`: aligns `--font-sans` / `--font-display` with theme variables.
+- `web/proxy.ts`: route gating for `/dashboard` + `/admin`.
+- `web/lib/supabase/server-client.ts`: cookie bridging for SSR auth context.
 
 ## Required environment variables
 
-### Public (already present)
+### Public
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-### Server-only (required for pending assessments)
+### Server-only
 - `SUPABASE_SERVICE_ROLE_KEY`
-  - Needed because `pending_assessments` is intentionally not accessible via RLS from client sessions.
-  - Must **never** be exposed to the browser (do not prefix with `NEXT_PUBLIC_`).
-
-## Supabase setup required (manual)
-
-### Storage bucket
-Create a private bucket:
-- Bucket: `contracts`
-- Access: **Private**
-
-### Storage policies (SQL)
-Add policies on `storage.objects` for bucket `contracts` so users can upload/read their own files and admins can access everything.
-
-```sql
--- Users can upload to their own folder
-create policy "Users can upload own contracts"
-on storage.objects for insert
-to authenticated
-with check (
-  bucket_id = 'contracts'
-  and auth.uid()::text = (storage.foldername(name))[1]
-);
-
--- Users can read their own contracts; admins can read all
-create policy "Users can read own contracts or admin"
-on storage.objects for select
-to authenticated
-using (
-  bucket_id = 'contracts'
-  and (
-    auth.uid()::text = (storage.foldername(name))[1]
-    or public.is_admin()
-  )
-);
-
--- Users can delete their own; admins can delete all
-create policy "Users can delete own contracts or admin"
-on storage.objects for delete
-to authenticated
-using (
-  bucket_id = 'contracts'
-  and (
-    auth.uid()::text = (storage.foldername(name))[1]
-    or public.is_admin()
-  )
-);
-```
+  - Required because `pending_assessments` is intentionally inaccessible via client RLS.
+  - Must never be exposed to the browser.
 
 ## Notes / known tradeoffs (Phase 1)
-- Email capture in the free assessment UI is currently used for UX gating only (results display) and is not persisted pre-account in the DB (schema intentionally keeps pending assessments minimal).
-- Results are **same-browser only** by design (no shareable links). Users can “save” results post-login via the claim endpoint.
+- Assessment results are not visible pre-auth; users must create/sign in to access scores in dashboard.
+- Pending assessments remain same-browser-only until claimed to an authenticated account.
+- `/results` remains as a compatibility redirect route for old links/bookmarks.

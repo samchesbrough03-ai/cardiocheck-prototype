@@ -531,7 +531,7 @@ function Landing({ onNavigate }: { onNavigate: (target: NavTarget) => void }) {
               [
                 "01",
                 "Free Health Score",
-                "Complete a 15-question assessment. Get your score and risk profile instantly — no account required.",
+                "Complete a 15-question assessment, then create an account to unlock your score and risk profile.",
               ],
               [
                 "02",
@@ -610,8 +610,8 @@ function Landing({ onNavigate }: { onNavigate: (target: NavTarget) => void }) {
               fontWeight: 300,
             }}
           >
-            Takes 10 minutes. No account needed. You&apos;ll receive a personalised Legal Health Score
-            with a breakdown of your top risk areas.
+            Takes 10 minutes. Create an account to unlock your personalised Legal Health Score with
+            a breakdown of your top risk areas.
           </p>
           <button
             onClick={() => onNavigate("assessment")}
