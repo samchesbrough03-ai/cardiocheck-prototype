@@ -16,6 +16,8 @@ function sanitizeNextPath(nextRaw: string | null) {
   return nextRaw;
 }
 
+const PRODUCTION_APP_ORIGIN = "https://www.fivevitals.co.uk";
+
 export default function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -46,6 +48,10 @@ export default function RegisterForm() {
         throw new Error("Company name is required.");
       }
 
+      const isLocalhost =
+        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+      const callbackOrigin = isLocalhost ? window.location.origin : PRODUCTION_APP_ORIGIN;
+
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -53,7 +59,7 @@ export default function RegisterForm() {
           data: {
             company_name: companyName.trim(),
           },
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}`,
+          emailRedirectTo: `${callbackOrigin}/auth/callback?next=${encodeURIComponent(nextPath)}`,
         },
       });
 
@@ -65,6 +71,15 @@ export default function RegisterForm() {
         await claimPendingAssessment();
         router.push(nextPath);
         router.refresh();
+        return;
+      }
+
+      // Supabase can return `user` with empty identities when the email
+      // is already registered (anti-enumeration behavior). In that case,
+      // avoid telling the user that a new verification email was sent.
+      const identityCount = data.user?.identities?.length ?? 0;
+      if (identityCount === 0) {
+        setInfo("An account with this email already exists. Please sign in instead.");
         return;
       }
 

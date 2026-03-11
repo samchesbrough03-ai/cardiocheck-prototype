@@ -81,7 +81,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const response = NextResponse.json({ ok: true, scores: { ...scores, overall: overallScore } });
+  // Do not return score data pre-auth. Scores are revealed only after
+  // claim + authenticated dashboard load.
+  const response = NextResponse.json({ ok: true });
   response.cookies.set(PENDING_ASSESSMENT_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
